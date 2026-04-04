@@ -208,13 +208,43 @@ class VLFinetuneDataset(Dataset):
             "image_flags": torch.tensor([], dtype=torch.long),
         }
 
+    def _count_text_tokens(self, conversations):
+        """Count text tokens excluding <image> placeholders."""
+        convs = list(conversations)
+        if convs[0]["from"] == "system":
+            system_prompt = convs[0]["value"]
+            convs = convs[1:]
+        else:
+            system_prompt = DEFAULT_SYSTEM_MESSAGE
+
+        parts = [f"<|start|>system<|message|>{system_prompt}<|end|>"]
+        for i, conv in enumerate(convs):
+            value = conv["value"].replace("<image>", "")
+            if conv["from"] == "human":
+                parts.append(f"<|start|>user<|message|>{value}<|end|>")
+            elif conv["from"] == "gpt":
+                is_last = i == len(convs) - 1
+                eos = "<|return|>" if is_last else "<|end|>"
+                parts.append(f"<|start|>assistant<|channel|>final<|message|>{value}{eos}")
+        return len(self.tokenizer.encode("".join(parts), add_special_tokens=False))
+
+    def _compute_max_patches(self, conversations, num_images=1):
+        """Compute max patches per image so the sequence fits in model_max_length."""
+        text_tokens = self._count_text_tokens(conversations)
+        image_budget = self.tokenizer.model_max_length - text_tokens
+        # Each image uses (num_patches) * num_image_token + 2 tokens (image_start + image_end)
+        # With thumbnail: num_patches = grid_patches + 1, so max_grid = budget / num_images / num_image_token - 1 - 2/num_image_token
+        max_num = (image_budget // num_images - 2) // self.num_image_token - 1
+        return max(1, min(self.max_dynamic_patch, max_num))
+
     def _process_single_image(self, item, image_path):
         conversations = item["conversations"]
         first_idx = 1 if conversations[0]["from"] == "system" else 0
         if "<image>" not in conversations[first_idx]["value"]:
             conversations[first_idx]["value"] = "<image>" + conversations[first_idx]["value"]
 
-        pixel_values = self._load_and_patch_image(image_path)
+        max_patches = self._compute_max_patches(conversations)
+        pixel_values = self._load_and_patch_image(image_path, max_num=max_patches)
         num_patches = pixel_values.size(0)
 
         ret = preprocess_conversation(
@@ -238,10 +268,12 @@ class VLFinetuneDataset(Dataset):
         if "<image>" not in conversations[first_idx]["value"]:
             conversations[first_idx]["value"] = "<image>" * len(image_paths) + conversations[first_idx]["value"]
 
+        max_patches = self._compute_max_patches(conversations, num_images=len(image_paths))
+
         all_pixel_values = []
         num_tiles = []
         for path in image_paths:
-            pv = self._load_and_patch_image(path)
+            pv = self._load_and_patch_image(path, max_num=max_patches)
             all_pixel_values.append(pv)
             num_tiles.append(pv.size(0))
 

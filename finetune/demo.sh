@@ -6,7 +6,7 @@ uv run torchrun --nproc_per_node=8 finetune/train.py \
     --output_dir output/demo \
     --num_train_epochs 3 \
     --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 8 \
+    --gradient_accumulation_steps 1 \
     --learning_rate 2e-5 \
     --weight_decay 0.01 \
     --warmup_ratio 0.03 \
