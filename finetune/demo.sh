@@ -1,9 +1,10 @@
 #!/bin/bash
 # Demo: finetune llm-jp-4-vl on a small dataset (single GPU)
 
-uv run python finetune/train.py \
+uv run torchrun --nproc_per_node=8 finetune/train.py \
     --data_path finetune/demo_data.jsonl \
     --output_dir output/demo \
+    --deepspeed finetune/zero3.json \
     --bf16 true \
     --num_train_epochs 3 \
     --per_device_train_batch_size 1 \
