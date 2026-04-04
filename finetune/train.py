@@ -10,6 +10,7 @@ Usage (single node, 8 GPUs):
 import argparse
 import math
 import os
+import time
 
 import torch
 import torch.distributed as dist
@@ -60,19 +61,23 @@ def setup_distributed():
 
 
 def apply_fsdp2(model):
-    """Apply FSDP2 fully_shard per decoder/encoder layer, then to the whole model."""
+    """Apply FSDP2 fully_shard per encoder/decoder layer, then to the root model.
+
+    Follows the same pattern as torchtitan's apply_fsdp: shard each transformer
+    layer individually, then shard the root module.
+    """
     mp_policy = MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.float32)
     fsdp_config = {"mp_policy": mp_policy, "reshard_after_forward": True}
 
-    # Shard vision encoder layers
+    # Shard each vision encoder layer
     for layer in model.vision_backbone.vision_model.encoder.layers:
         fully_shard(layer, **fsdp_config)
 
-    # Shard LLM decoder layers (works for GptOss, Llama, Qwen2, Qwen3, etc.)
+    # Shard each LLM decoder layer (GptOss, Llama, Qwen2, Qwen3, etc.)
     for layer in model.language_model.model.layers:
         fully_shard(layer, **fsdp_config)
 
-    # Shard projector
+    # Shard the projector
     fully_shard(model.mlp1, **fsdp_config)
 
     # Shard the root model
@@ -81,7 +86,7 @@ def apply_fsdp2(model):
 
 
 def save_checkpoint(model, processor, output_dir, rank):
-    """Gather FSDP2 sharded state dict and save on rank 0."""
+    """Gather FSDP2 full state dict and save on rank 0."""
     from torch.distributed.checkpoint.state_dict import (
         StateDictOptions,
         get_model_state_dict,
@@ -96,17 +101,39 @@ def save_checkpoint(model, processor, output_dir, rank):
     dist.barrier()
 
 
+def forward_backward_step(model, batch, gradient_accumulation_steps):
+    """Forward pass + loss scaling + backward. Follows torchtitan's pattern."""
+    pred = model(
+        input_ids=batch["input_ids"],
+        pixel_values=batch["pixel_values"],
+        attention_mask=batch["attention_mask"],
+        labels=batch["labels"],
+        image_flags=batch["image_flags"],
+    )
+    loss = pred.loss / gradient_accumulation_steps
+    del pred
+    loss.backward()
+    return loss
+
+
 def main():
     args = parse_args()
     rank, local_rank = setup_distributed()
+    device = torch.device(f"cuda:{local_rank}")
 
-    # Load model on CPU first, then apply FSDP
+    if rank == 0:
+        print("[rank 0] Loading model...")
+
+    # Load model
     model = AutoModel.from_pretrained(
         args.model_id,
         torch_dtype=torch.bfloat16,
         trust_remote_code=True,
         use_flash_attn=True,
     )
+
+    if rank == 0:
+        print("[rank 0] Model loaded. Freezing components...")
 
     # Freeze components
     if args.freeze_vision:
@@ -116,11 +143,21 @@ def main():
         for param in model.mlp1.parameters():
             param.requires_grad = False
 
+    # Activate gradient checkpointing
     if args.gradient_checkpointing:
         model.language_model.gradient_checkpointing_enable()
+        model.vision_backbone.gradient_checkpointing_enable()
+        model.config.use_cache = False
+
+    if rank == 0:
+        print("[rank 0] Applying FSDP2...")
 
     # Apply FSDP2
     model = apply_fsdp2(model)
+    model.train()
+
+    if rank == 0:
+        print("[rank 0] FSDP2 applied. Loading processor and dataset...")
 
     # Processor and dataset
     processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True)
@@ -132,6 +169,9 @@ def main():
         processor=processor,
         max_dynamic_patch=args.max_dynamic_patch,
     )
+
+    if rank == 0:
+        print(f"[rank 0] Dataset loaded: {len(dataset)} samples. Building dataloader...")
 
     sampler = DistributedSampler(dataset, shuffle=True, seed=args.seed)
     dataloader = DataLoader(
@@ -159,33 +199,47 @@ def main():
     cosine_scheduler = CosineAnnealingLR(optimizer, T_max=max(total_steps - warmup_steps, 1))
     scheduler = SequentialLR(optimizer, [warmup_scheduler, cosine_scheduler], milestones=[warmup_steps])
 
-    # Training loop
+    if rank == 0:
+        print(
+            f"Training: {len(dataset)} samples, {total_steps} steps "
+            f"(warmup {warmup_steps}), grad accum {args.gradient_accumulation_steps}"
+        )
+
+    # Training loop (follows torchtitan's train_step pattern)
     global_step = 0
     for epoch in range(args.num_train_epochs):
         sampler.set_epoch(epoch)
-        model.train()
-        optimizer.zero_grad()
+        data_iterator = iter(dataloader)
+        microbatch_idx = 0
 
-        for step, batch in enumerate(dataloader):
+        for batch in data_iterator:
+            if microbatch_idx == 0:
+                optimizer.zero_grad()
+
+            # Move batch to device
             batch = {
-                k: v.to(f"cuda:{local_rank}") if isinstance(v, torch.Tensor) else v
+                k: v.to(device) if isinstance(v, torch.Tensor) else v
                 for k, v in batch.items()
             }
             batch["pixel_values"] = batch["pixel_values"].to(dtype=torch.bfloat16)
 
-            outputs = model(**batch)
-            loss = outputs.loss / args.gradient_accumulation_steps
-            loss.backward()
+            # Forward + backward (loss is scaled by grad accum steps)
+            loss = forward_backward_step(model, batch, args.gradient_accumulation_steps)
+            microbatch_idx += 1
 
-            if (step + 1) % args.gradient_accumulation_steps == 0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+            # Accumulate gradients, then step
+            if microbatch_idx == args.gradient_accumulation_steps:
+                if args.max_grad_norm > 0.0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
                 scheduler.step()
-                optimizer.zero_grad()
+
                 global_step += 1
+                microbatch_idx = 0
 
                 if global_step % args.logging_steps == 0 and rank == 0:
                     lr = optimizer.param_groups[0]["lr"]
+                    # loss was already divided by grad_accum_steps, multiply back for logging
                     print(
                         f"epoch={epoch+1}/{args.num_train_epochs} "
                         f"step={global_step}/{total_steps} "
@@ -196,19 +250,23 @@ def main():
                 if args.save_strategy == "steps" and global_step % args.save_steps == 0:
                     save_checkpoint(model, processor, f"{args.output_dir}/step-{global_step}", rank)
 
-        # Handle remaining gradients
-        if len(dataloader) % args.gradient_accumulation_steps != 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+        # Handle remaining microbatches at end of epoch
+        if microbatch_idx > 0:
+            if args.max_grad_norm > 0.0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
             optimizer.step()
             scheduler.step()
-            optimizer.zero_grad()
             global_step += 1
+            microbatch_idx = 0
 
         if args.save_strategy == "epoch":
             save_checkpoint(model, processor, f"{args.output_dir}/epoch-{epoch+1}", rank)
 
     # Save final model
     save_checkpoint(model, processor, f"{args.output_dir}/final", rank)
+
+    if rank == 0:
+        print("Training completed")
     dist.destroy_process_group()
 
 
