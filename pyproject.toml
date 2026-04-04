@@ -1,0 +1,20 @@
+[project]
+name = "llm-jp-4-vl"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "torch==2.8.0",
+    "transformers==4.57.0",
+    "flash-attn==2.8.3",
+    "pillow==11.3.0",
+]
+
+[tool.uv]
+no-build-isolation-package = ["flash-attn"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.9",
+]
