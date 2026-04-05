@@ -1,6 +1,6 @@
 # Finetune LLM-jp-4-VL
 
-Simple finetuning framework for [llm-jp-4-vl](https://huggingface.co/llm-jp/llm-jp-4-vl-9B-beta) based on HuggingFace Trainer.
+Simple finetuning framework for [llm-jp-4-vl](https://huggingface.co/llm-jp/llm-jp-4-vl-9B-beta) using PyTorch FSDP2.
 
 ## Requirements
 
@@ -87,43 +87,21 @@ Run the demo script with the provided sample data:
 bash finetune/demo.sh
 ```
 
-### Single GPU
+### Multi-GPU (torchrun)
 
 ```bash
-uv run python finetune/train.py \
+uv run torchrun --nproc_per_node=8 finetune/train.py \
     --data_path path/to/data.jsonl \
     --output_dir output/my_finetune \
-    --bf16 true \
     --num_train_epochs 3 \
     --per_device_train_batch_size 1 \
     --gradient_accumulation_steps 8 \
     --learning_rate 2e-5 \
     --weight_decay 0.01 \
     --warmup_ratio 0.03 \
-    --lr_scheduler_type cosine \
     --logging_steps 1 \
     --save_strategy epoch \
-    --gradient_checkpointing true \
-    --dataloader_num_workers 4
-```
-
-### Multi-GPU (torchrun)
-
-```bash
-uv run torchrun --nproc_per_node=4 finetune/train.py \
-    --data_path path/to/data.jsonl \
-    --output_dir output/my_finetune \
-    --bf16 true \
-    --num_train_epochs 3 \
-    --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 2 \
-    --learning_rate 2e-5 \
-    --weight_decay 0.01 \
-    --warmup_ratio 0.03 \
-    --lr_scheduler_type cosine \
-    --logging_steps 1 \
-    --save_strategy epoch \
-    --gradient_checkpointing true \
+    --gradient_checkpointing \
     --dataloader_num_workers 4
 ```
 
@@ -138,7 +116,7 @@ uv run torchrun --nproc_per_node=4 finetune/train.py \
 | `--freeze_projector` | `false` | Freeze the MLP projector |
 | `--max_dynamic_patch` | `12` | Max number of dynamic patches per image |
 
-### Training (HuggingFace TrainingArguments)
+### Training
 
 | Parameter | Suggested | Description |
 |-----------|-----------|-------------|
@@ -147,18 +125,18 @@ uv run torchrun --nproc_per_node=4 finetune/train.py \
 | `--per_device_train_batch_size` | `1` | Batch size per GPU |
 | `--gradient_accumulation_steps` | `8` | Gradient accumulation steps |
 | `--gradient_checkpointing` | `true` | Reduce memory usage |
-| `--bf16` | `true` | Use bfloat16 mixed precision |
 | `--warmup_ratio` | `0.03` | Warmup ratio |
-| `--lr_scheduler_type` | `cosine` | Learning rate scheduler |
-| `--save_strategy` | `epoch` | Checkpoint saving strategy |
-| `--deepspeed` | - | Path to DeepSpeed config for ZeRO |
+| `--save_strategy` | `epoch` | Checkpoint saving strategy (`epoch` or `steps`) |
+| `--save_steps` | `500` | Save every N steps (when `--save_strategy steps`) |
+| `--max_grad_norm` | `1.0` | Max gradient norm for clipping |
+| `--seed` | `42` | Random seed |
 
 ## File Structure
 
 ```
 finetune/
 ├── README.md          # This file
-├── train.py           # Main training script
+├── train.py           # Main training script (FSDP2)
 ├── dataset.py         # Dataset and data collator
 ├── demo.sh            # Demo launch script
 └── demo_data.jsonl    # Sample data using assets/ images

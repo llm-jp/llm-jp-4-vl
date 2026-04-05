@@ -10,7 +10,6 @@ Usage (single node, 8 GPUs):
 import argparse
 import math
 import os
-import time
 
 import torch
 import torch.distributed as dist
@@ -85,19 +84,15 @@ def apply_fsdp2(model):
     return model
 
 
-def save_checkpoint(model, processor, output_dir, rank):
-    """Gather FSDP2 full state dict and save on rank 0."""
-    from torch.distributed.checkpoint.state_dict import (
-        StateDictOptions,
-        get_model_state_dict,
-    )
+def save_checkpoint(model, output_dir, rank):
+    """Save FSDP2 checkpoint using DCP (distributed, no full gather)."""
+    import torch.distributed.checkpoint as dcp
+    from torch.distributed.checkpoint.state_dict import get_model_state_dict
 
-    state_dict = get_model_state_dict(model, options=StateDictOptions(full_state_dict=True))
+    state_dict = get_model_state_dict(model)
+    dcp.save(state_dict, checkpoint_id=output_dir)
     if rank == 0:
-        os.makedirs(output_dir, exist_ok=True)
-        model.save_pretrained(output_dir, state_dict=state_dict)
-        processor.save_pretrained(output_dir)
-        print(f"Saved checkpoint to {output_dir}")
+        print(f"Saved DCP checkpoint to {output_dir}")
     dist.barrier()
 
 
@@ -248,7 +243,7 @@ def main():
                     )
 
                 if args.save_strategy == "steps" and global_step % args.save_steps == 0:
-                    save_checkpoint(model, processor, f"{args.output_dir}/step-{global_step}", rank)
+                    save_checkpoint(model, f"{args.output_dir}/step-{global_step}", rank)
 
         # Handle remaining microbatches at end of epoch
         if microbatch_idx > 0:
@@ -260,10 +255,10 @@ def main():
             microbatch_idx = 0
 
         if args.save_strategy == "epoch":
-            save_checkpoint(model, processor, f"{args.output_dir}/epoch-{epoch+1}", rank)
+            save_checkpoint(model, f"{args.output_dir}/epoch-{epoch+1}", rank)
 
     # Save final model
-    save_checkpoint(model, processor, f"{args.output_dir}/final", rank)
+    save_checkpoint(model, f"{args.output_dir}/final", rank)
 
     if rank == 0:
         print("Training completed")
