@@ -13,7 +13,7 @@ import os
 
 import torch
 import torch.distributed as dist
-from torch.distributed.fsdp import MixedPrecisionPolicy, fully_shard
+from torch.distributed.fsdp import CPUOffloadPolicy, MixedPrecisionPolicy, fully_shard
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.data import DataLoader
@@ -47,6 +47,7 @@ def parse_args():
     p.add_argument("--save_strategy", default="epoch", choices=["epoch", "steps"])
     p.add_argument("--save_steps", type=int, default=500)
     p.add_argument("--gradient_checkpointing", action="store_true", default=True)
+    p.add_argument("--cpu_offload", action="store_true", default=False)
     p.add_argument("--seed", type=int, default=42)
     return p.parse_args()
 
@@ -59,7 +60,7 @@ def setup_distributed():
     return rank, local_rank
 
 
-def apply_fsdp2(model):
+def apply_fsdp2(model, cpu_offload=False):
     """Apply FSDP2 fully_shard per encoder/decoder layer, then to the root model.
 
     Follows the same pattern as torchtitan's apply_fsdp: shard each transformer
@@ -67,6 +68,8 @@ def apply_fsdp2(model):
     """
     mp_policy = MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.float32)
     fsdp_config = {"mp_policy": mp_policy, "reshard_after_forward": True}
+    if cpu_offload:
+        fsdp_config["offload_policy"] = CPUOffloadPolicy()
 
     # Shard each vision encoder layer
     for layer in model.vision_backbone.vision_model.encoder.layers:
@@ -148,7 +151,7 @@ def main():
         print("[rank 0] Applying FSDP2...")
 
     # Apply FSDP2
-    model = apply_fsdp2(model)
+    model = apply_fsdp2(model, cpu_offload=args.cpu_offload)
     model.train()
 
     if rank == 0:
