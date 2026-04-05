@@ -53,7 +53,7 @@ def parse_args():
 
 
 def setup_distributed():
-    dist.init_process_group("nccl")
+    dist.init_process_group("cuda:nccl,cpu:gloo")
     rank = dist.get_rank()
     local_rank = int(os.environ["LOCAL_RANK"])
     torch.cuda.set_device(local_rank)
