@@ -3,7 +3,7 @@
 
 
   |
-  <a href="https://huggingface.co/datasets/llm-jp/llm-jp-4-vl-9b-beta" target="_blank">🤗 Model</a>
+  <a href="https://huggingface.co/llm-jp/llm-jp-4-vl-9b-beta" target="_blank">🤗 Model</a>
   &nbsp;|
   <a href="https://llm-jp.github.io/blog/" target="_blank">📄 Blog</a>
   &nbsp;|
