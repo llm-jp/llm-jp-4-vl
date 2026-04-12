@@ -13,7 +13,7 @@
   <br/>
 <div align="center">
 <figure>
-  <img src="./architecture.png" alt="" style="width: 50%">
+  <img src="./architecture.png" alt="" style="width: 30%">
 </figure>
 </div>
 </div>
