@@ -89,7 +89,7 @@ messages = [
 For more details, please refer to the code in `codebooks` directory.
 
 ## Evaluation Reproduction
-To reproduce the evaluation results, please refer to our [simple-evals-mm](https://github.com/llm-jp/simple-evals-mm) repository.
+To reproduce the evaluation results reported in our blog post, please refer to [simple-evals-mm](https://github.com/llm-jp/simple-evals-mm), our VLM evaluation framework.
 
 
 ## Citation
