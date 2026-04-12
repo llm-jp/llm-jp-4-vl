@@ -15,13 +15,10 @@
 
 LLM-jp-4-VL is the vision-language model developed by LLM-jp.
 
-<div align="center">
 <figure>
   <img src="./architecture.png" alt="" style="width: 30%">
-  <figcaption>LLM-jp-4-VL model architecture.</figcaption>
 </figure>
-</div>
-
+LLM-jp-4-VL model architecture.
 
 ## Usage
 Install dependencies:
