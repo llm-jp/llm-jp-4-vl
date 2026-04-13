@@ -90,7 +90,7 @@ For more details, please refer to the code in `codebooks` directory.
 To reproduce the evaluation results reported in our blog post, please refer to [simple-evals-mm](https://github.com/llm-jp/simple-evals-mm), our VLM evaluation framework.
 
 ## LICENSE
-Apache 2.0
+This code is released under the Apache 2.0 license.
 
 ## Citation
 If you find our work useful, please consider citing the following papers:
