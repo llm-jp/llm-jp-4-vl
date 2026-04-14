@@ -5,7 +5,7 @@
   |
   <a href="https://huggingface.co/llm-jp/llm-jp-4-vl-9b-beta" target="_blank">🤗 Model</a>
   &nbsp;|
-  <a href="https://llm-jp.github.io/blog/" target="_blank">📄 Blog</a>
+  <a href="https://llm-jp.nii.ac.jp/blog/20260414_llm-jp-4-vl-9b-beta/" target="_blank">📄 Blog</a>
   &nbsp;|
   <a href="https://github.com/llm-jp/llm-jp-4-vl" target="_blank">🧑‍💻 Code</a>
   &nbsp;|
