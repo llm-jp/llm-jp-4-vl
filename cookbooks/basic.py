@@ -1,7 +1,14 @@
+import re
+
 import torch
 from transformers import AutoProcessor, AutoModel
 
-model_id = "llm-jp/llm-jp-4-vl-9B-beta"
+# Works with both models:
+#   - "llm-jp/llm-jp-4-vl-9b"       (reasoning model; may emit an analysis
+#                                     channel before the final answer)
+#   - "llm-jp/llm-jp-4-vl-9B-beta"  (non-reasoning; final answer only)
+model_id = "llm-jp/llm-jp-4-vl-9b"
+is_reasoning = "beta" not in model_id  # the beta model has no reasoning channel
 
 # load model
 model = (
@@ -17,14 +24,23 @@ model = (
 
 processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
 
+# The final answer follows this marker; a reasoning model may first emit
+# "<|channel|>analysis<|message|>...<|end|>". decode() can put spaces around the
+# marker tokens, so match them space-tolerantly.
+_FINAL_RE = re.compile(r"<\|channel\|>\s*final\s*<\|message\|>")
 
-def generate(messages, max_new_tokens=256, temperature=0.0):
+
+def generate(messages, max_new_tokens=1024, temperature=0.0, reasoning_effort="medium"):
+    # reasoning_effort ("low" -> direct answer / "medium" / "high") is only
+    # accepted by the reasoning model's chat template.
+    template_kwargs = {"reasoning_effort": reasoning_effort} if is_reasoning else {}
     inputs = processor.apply_chat_template(
         messages,
         tokenize=True,
         add_generation_prompt=True,
         return_dict=True,
         return_tensors="pt",
+        **template_kwargs,
     ).to(model.device)
 
     if "pixel_values" in inputs:
@@ -38,9 +54,13 @@ def generate(messages, max_new_tokens=256, temperature=0.0):
     )
 
     text = processor.decode(outputs[0], skip_special_tokens=False)
-    text = text.replace("<|channel|>final<|message|>", "")
-    text = text.replace("<|return|>", "")
-    text = text.replace(processor.tokenizer.eos_token, "")
+    # Keep only the text after the LAST final-channel marker, so any analysis
+    # (chain-of-thought) is dropped. Works for the non-reasoning model too,
+    # whose output is just "<|channel|>final<|message|>{answer}<|return|>".
+    matches = list(_FINAL_RE.finditer(text))
+    if matches:
+        text = text[matches[-1].end():]
+    text = re.sub(r"<\|[^|]*\|>", "", text).replace(processor.tokenizer.eos_token, "")
     return text.strip()
 
 
