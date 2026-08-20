@@ -28,65 +28,7 @@ Install dependencies:
 uv sync
 ```
 
-Below is an example code for inference.
-```python
-import torch
-from transformers import AutoProcessor, AutoModel
-
-model_id = "llm-jp/llm-jp-4-vl-9B-beta"
-
-# load model
-model = (
-    AutoModel.from_pretrained(
-        model_id,
-        torch_dtype=torch.bfloat16,
-        trust_remote_code=True,
-        use_flash_attn=True,
-    )
-    .eval()
-    .cuda()
-)
-
-processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
-
-
-def generate(messages, max_new_tokens=256, temperature=0.0):
-    inputs = processor.apply_chat_template(
-        messages,
-        tokenize=True,
-        add_generation_prompt=True,
-        return_dict=True,
-        return_tensors="pt",
-    ).to(model.device)
-
-    if "pixel_values" in inputs:
-        inputs["pixel_values"] = inputs["pixel_values"].to(dtype=model.dtype)
-
-    outputs = model.generate(
-        **inputs,
-        max_new_tokens=max_new_tokens,
-        do_sample=temperature > 0,
-        temperature=temperature if temperature > 0 else None,
-    )
-
-    text = processor.decode(outputs[0], skip_special_tokens=False)
-    text = text.replace("<|channel|>final<|message|>", "")
-    text = text.replace("<|return|>", "")
-    text = text.replace(processor.tokenizer.eos_token, "")
-    return text.strip()
-
-messages = [
-    {
-        "role": "user",
-        "content": [
-            {"type": "image", "image": "assets/tweet.png"},
-            {"type": "text", "text": "ツイート内容を全て抜き出してください"},
-        ],
-    }
-]
-```
-
-For more details, please refer to the code in `codebooks` directory.
+See [`cookbooks/basic.py`](cookbooks/basic.py) for a runnable inference example covering text-only, single-image, multi-image, and multi-turn inputs. It works with both `llm-jp/llm-jp-4-vl-9b` (reasoning) and `llm-jp/llm-jp-4-vl-9B-beta` (non-reasoning); switch models by editing `model_id` at the top of the file.
 
 ## Evaluation Reproduction
 To reproduce the evaluation results reported in our blog post, please refer to [simple-evals-mm](https://github.com/llm-jp/simple-evals-mm), our VLM evaluation framework.
