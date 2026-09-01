@@ -3,9 +3,9 @@
 
 
   |
-  <a href="https://huggingface.co/llm-jp/llm-jp-4-vl-9b-beta" target="_blank">🤗 Model</a>
+  <a href="https://huggingface.co/llm-jp/llm-jp-4-vl-9b" target="_blank">🤗 Model</a>
   &nbsp;|
-  <a href="https://llm-jp.nii.ac.jp/blog/20260414_llm-jp-4-vl-9b-beta/" target="_blank">📄 Blog</a>
+  <a href="https://llm-jp.nii.ac.jp/blog/llm-jp-4-vl-9b/" target="_blank">📄 Blog</a>
   &nbsp;|
   <a href="https://github.com/llm-jp/llm-jp-4-vl" target="_blank">🧑‍💻 Code</a>
   &nbsp;|
@@ -13,7 +13,7 @@
   <br/>
 </div>
 
-LLM-jp-4-VL is a series of vision-language models developed by LLM-jp. Currently, only a beta version is available.
+LLM-jp-4-VL is a series of vision-language models developed by LLM-jp.
 
 This repository provides sample code for running inference with the LLM-jp-4-VL models.
 
