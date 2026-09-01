@@ -17,10 +17,6 @@ LLM-jp-4-VL is a series of vision-language models developed by LLM-jp.
 
 This repository provides sample code for running inference with the LLM-jp-4-VL models.
 
-<figure>
-  <img src="./architecture.png" alt="" style="width: 30%">
-</figure>
-LLM-jp-4-VL model architecture.
 
 ## Usage
 Install dependencies:
